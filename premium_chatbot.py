@@ -8,37 +8,7 @@ import textwrap
 from gtts import gTTS
 import tempfile
 
-# ---------------------------
-# SESSION STATE INIT
-# ---------------------------
-if "chat" not in st.session_state:
-    st.session_state.chat = []
-if "username" not in st.session_state:
-    st.session_state.username = ""
-if "mood" not in st.session_state:
-    st.session_state.mood = "Friendly"
-if "voice_on" not in st.session_state:
-    st.session_state.voice_on = False
-if "voice_rate" not in st.session_state:
-    st.session_state.voice_rate = 150
-if "voice_volume" not in st.session_state:
-    st.session_state.voice_volume = 1.0
-if "trim_long_reads" not in st.session_state:
-    st.session_state.trim_long_reads = True
-if "use_realtime" not in st.session_state:
-    st.session_state.use_realtime = False
-if "last_response" not in st.session_state:
-    st.session_state.last_response = ""
-if "main_input" not in st.session_state:
-    st.session_state.main_input = ""
-if "needs_rerun" not in st.session_state:
-    st.session_state.needs_rerun = False
-if "voice_voice" not in st.session_state:
-    st.session_state.voice_voice = None
-
-# ---------------------------
 # GEMINI / TTS CONFIGURATION
-# ---------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", None) or st.secrets.get("GEMINI_API_KEY", None) or "YOUR_GEMINI_API_KEY"
 
 try:
@@ -50,9 +20,6 @@ except Exception:
     genai = None
     gemini_available = False
 
-# ---------------------------
-# MEMORY
-# ---------------------------
 MEMORY_FILE = "memory.json"
 MAX_MEMORY_MESSAGES = 500
 
@@ -74,9 +41,6 @@ def save_memory(mem):
     except Exception as e:
         st.error("Could not save memory: " + str(e))
 
-# ---------------------------
-# UTILITIES
-# ---------------------------
 def smart_trim_text(text, max_sentences=3):
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     if len(sentences) <= max_sentences:
@@ -97,13 +61,7 @@ def offline_fallback(prompt):
         return "Why did the programmer quit his job? Because he didn't get arrays (a raise)."
     return "Sorry — I can't reach Gemini now. Try again later or enable offline-friendly prompts."
 
-def format_role(role):
-    return "You" if role == "user" else "Assistant"
-
-# ---------------------------
-# GEMINI INTERACTION
-# ---------------------------
-def generate_gemini_answer(prompt, system_instruction=None, max_output_tokens=512):
+def generate_gemini_answer(prompt, system_instruction=None):
     if not gemini_available or genai is None:
         return offline_fallback(prompt)
     try:
@@ -112,10 +70,8 @@ def generate_gemini_answer(prompt, system_instruction=None, max_output_tokens=51
             contents.append({"role": "system", "content": system_instruction})
         contents.append({"role": "user", "content": prompt})
         model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-        resp = model.generate_content(
-            prompt if isinstance(prompt, str) else prompt,
-            max_output_tokens=max_output_tokens
-        )
+        # IMPORTANT: Removed max_output_tokens here
+        resp = model.generate_content(prompt)
         if hasattr(resp, "text") and resp.text:
             return resp.text
         if hasattr(resp, "output") and resp.output:
@@ -127,10 +83,7 @@ def generate_gemini_answer(prompt, system_instruction=None, max_output_tokens=51
     except Exception as e:
         return f"⚠️ Gemini error: {e}. (Falling back offline.)\n\n" + offline_fallback(prompt)
 
-# ---------------------------
-# VOICE (TTS) FUNCTIONS using gTTS
-# ---------------------------
-def speak(text, rate=160, volume=0.9, voice_id=None):
+def speak(text):
     try:
         tts = gTTS(text=text, lang='en', slow=False)
         with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
@@ -141,28 +94,30 @@ def speak(text, rate=160, volume=0.9, voice_id=None):
     except Exception as e:
         st.warning("TTS failed: " + str(e))
 
-# ---------------------------
-# STREAMLIT APP UI + LOGIC
-# ---------------------------
+def timestamp():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+# Initialize session state keys safely
+if "chat" not in st.session_state:
+    st.session_state.chat = load_memory()
+if "username" not in st.session_state:
+    st.session_state.username = ""
+if "mood" not in st.session_state:
+    st.session_state.mood = "Friendly"
+if "voice_on" not in st.session_state:
+    st.session_state.voice_on = False
+if "voice_rate" not in st.session_state:
+    st.session_state.voice_rate = 150
+if "voice_volume" not in st.session_state:
+    st.session_state.voice_volume = 1.0
+if "trim_long_reads" not in st.session_state:
+    st.session_state.trim_long_reads = True
 
 st.set_page_config(page_title="✨ Premium Text+Voice ChatBot", page_icon="🤖", layout="wide")
 
 st.markdown("""
 <style>
-:root { --bg: #0f1723; --card: #0b1220; --muted: #9aa4b2; --accent: #00a6fb; --user:#0b9a6c; }
-body { background: radial-gradient(circle at 10% 20%, #0b1220, #07101a 40%, #02060a); color: #e6eef6; }
-.chat-area { max-width: 900px; margin: auto; padding: 18px; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 6px 30px rgba(0,0,0,0.6); }
-.header { text-align:center; padding-bottom:10px; }
-.subtle { color: var(--muted); font-size: 13px; }
-.bubble { padding:12px 14px; border-radius: 12px; display: inline-block; margin: 8px 0; max-width:80%; line-height:1.4; }
-.bubble.user { background: linear-gradient(90deg,#075E54,#087f66); color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
-.bubble.bot { background: linear-gradient(90deg,#0b1220,#0f1723); color:#e6eef6; border:1px solid rgba(255,255,255,0.03); border-bottom-left-radius:4px; }
-.meta { font-size:12px; color:var(--muted); margin-top:4px; }
-.input-row { display:flex; gap:8px; margin-top:12px; }
-.textbox { flex:1; }
-.send-btn { background: linear-gradient(90deg,#00a6fb,#0066ff); border:none; color:white; padding:10px 14px; border-radius:10px; cursor:pointer; }
-.suggest { background: rgba(255,255,255,0.04); padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); margin-right:8px; cursor:pointer; display:inline-block; color:#e6eef6; }
-[data-testid="stSidebar"] { background: linear-gradient(180deg,#07101a,#031020); color:#e6eef6; }
+/* Your CSS styling here */
 </style>
 """, unsafe_allow_html=True)
 
@@ -171,59 +126,53 @@ st.markdown("<div class='header'><h1 style='margin:0'>🤖 Premium Text + Voice 
 
 with st.sidebar:
     st.header("⚙️ Settings")
-    username = st.text_input("Your name (optional)", st.session_state.get("username",""))
-    if username:
-        st.session_state["username"] = username
-    mood = st.selectbox("Bot Personality", ["Friendly","Formal","Playful","Sarcastic","Teacher"], index=0)
-    st.session_state["mood"] = mood
+    username = st.text_input("Your name (optional)", st.session_state.username)
+    if username != st.session_state.username:
+        st.session_state.username = username
+    mood = st.selectbox("Bot Personality", ["Friendly","Formal","Playful","Sarcastic","Teacher"], index=["Friendly","Formal","Playful","Sarcastic","Teacher"].index(st.session_state.mood))
+    if mood != st.session_state.mood:
+        st.session_state.mood = mood
     st.markdown("---")
     st.subheader("Voice Controls")
-    voice_on = st.checkbox("Enable Voice Output", value=st.session_state.get("voice_on", False))
-    st.session_state["voice_on"] = voice_on
-    rate = st.slider("Speaking rate", 80, 260, st.session_state.get("voice_rate", 150))
-    st.session_state["voice_rate"] = rate
-    volume = st.slider("Volume", 0.1, 1.0, st.session_state.get("voice_volume", 1.0))
-    st.session_state["voice_volume"] = volume
-    # Voices dropdown for UI only; no effect with gTTS
-    st.selectbox("System voice (optional)", ["Default"])
+    voice_on = st.checkbox("Enable Voice Output", value=st.session_state.voice_on)
+    if voice_on != st.session_state.voice_on:
+        st.session_state.voice_on = voice_on
+    rate = st.slider("Speaking rate", 80, 260, st.session_state.voice_rate)
+    if rate != st.session_state.voice_rate:
+        st.session_state.voice_rate = rate
+    volume = st.slider("Volume", 0.1, 1.0, st.session_state.voice_volume)
+    if volume != st.session_state.voice_volume:
+        st.session_state.voice_volume = volume
+    st.selectbox("System voice (optional)", ["Default"])  # UI only; no effect with gTTS
     st.markdown("---")
     st.subheader("Advanced")
-    st.session_state["trim_long_reads"] = st.checkbox("Smart Read (short first)", value=st.session_state.get("trim_long_reads", True))
+    trim_long_reads = st.checkbox("Smart Read (short first)", value=st.session_state.trim_long_reads)
+    if trim_long_reads != st.session_state.trim_long_reads:
+        st.session_state.trim_long_reads = trim_long_reads
     use_realtime = st.checkbox("Use realtime APIs for weather/news (optional)", value=False)
-    st.session_state["use_realtime"] = use_realtime
     st.markdown("---")
     st.write("Commands: `/help`, `/clear`, `/time`, `/date`, `/about`")
     if st.button("Clear persistent memory (all)"):
         save_memory([])
         st.success("Memory cleared.")
-    st.markdown("Gemini available: **{}**".format("Yes" if gemini_available else "No"))
+    st.markdown(f"Gemini available: **{'Yes' if gemini_available else 'No'}**")
     if not gemini_available:
-        st.warning("Gemini SDK missing or API key not configured. Install `google-generativeai` and set GEMINI_API_KEY.")
+        st.warning("Gemini SDK missing or API key not configured.")
+
+def format_role(role):
+    return "You" if role == "user" else "Assistant"
+
+def render_chat():
+    for role, text, time_str, meta in st.session_state.chat[-200:]:
+        safe_text = text.replace("\n","<br>")
+        if role == "user":
+            st.markdown(f"<div class='bubble user'><b>🧑 {st.session_state.username or 'You'}:</b><br>{safe_text}</div><div class='meta' style='text-align:right'>{time_str}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='bubble bot'><b>🤖 Bot:</b><br>{safe_text}</div><div class='meta'>{time_str}</div>", unsafe_allow_html=True)
 
 if not st.session_state.chat:
     welcome = "Hello! I'm your premium assistant. Ask me anything — choose a personality from the sidebar. Try `/help` to see commands."
-    st.session_state.chat = [("bot", welcome, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), {})]
-
-def timestamp():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-qa1, qa2, qa3, qa4 = st.columns([1,1,1,1])
-if qa1.button("☁ Weather (Delhi)"):
-    st.session_state.chat.append(("user","weather Delhi", timestamp(), {}))
-if qa2.button("😂 Joke"):
-    st.session_state.chat.append(("user","tell me a joke", timestamp(), {}))
-if qa3.button("💡 Quote"):
-    st.session_state.chat.append(("user","inspirational quote", timestamp(), {}))
-if qa4.button("📰 News (top)"):
-    st.session_state.chat.append(("user","latest news headlines", timestamp(), {}))
-
-def render_chat():
-    for i, (role, text, time_str, meta) in enumerate(st.session_state.chat[-200:]):
-        safe_text = text.replace("\n","<br>")
-        if role == "user":
-            st.markdown(f"<div class='bubble user'><b>🧑 {st.session_state.get('username','You')}:</b><br>{safe_text}</div><div class='meta' style='text-align:right'>{time_str}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='bubble bot'><b>🤖 Bot:</b><br>{safe_text}</div><div class='meta'>{time_str}</div>", unsafe_allow_html=True)
+    st.session_state.chat = [("bot", welcome, timestamp(), {})]
 
 render_chat()
 
@@ -231,7 +180,7 @@ col_input, col_send = st.columns([8,1])
 with col_input:
     user_input = st.text_input("💬 Type your message (or use a command)", key="main_input", value="")
 with col_send:
-    send = st.button("Send", key="send_btn")
+    send = st.button("Send")
 
 def handle_command(cmd):
     cmd = cmd.strip().lower()
@@ -275,19 +224,18 @@ def build_context_prompt(user_msg, memory_window=8):
         role_label = "User" if role == "user" else "Assistant"
         convo.append(f"{role_label}: {text}")
     convo_text = "\n".join(convo)
-    system_inst = system_prompt_for_mood(st.session_state.get("mood","Friendly"))
-    if st.session_state.get("username"):
-        system_inst += f" Address the user as {st.session_state['username']} when appropriate."
+    system_inst = system_prompt_for_mood(st.session_state.mood)
+    if st.session_state.username:
+        system_inst += f" Address the user as {st.session_state.username} when appropriate."
     prompt = f"{system_inst}\nConversation:\n{convo_text}\nUser: {user_msg}\nAssistant:"
     return prompt
 
-if send and user_input is not None:
+if send and user_input:
     msg = user_input.strip()
     if not msg:
         st.warning("Type a message first.")
     else:
         st.session_state.chat.append(("user", msg, timestamp(), {}))
-
         if msg.startswith("/"):
             cmd_result = handle_command(msg)
             if cmd_result:
@@ -304,42 +252,21 @@ if send and user_input is not None:
         prompt = build_context_prompt(msg, memory_window=6)
 
         with st.spinner("Thinking..."):
-            raw_answer = generate_gemini_answer(prompt, system_instruction=None, max_output_tokens=1024)
+            raw_answer = generate_gemini_answer(prompt)
 
         displayed, remainder = raw_answer, None
-        if st.session_state.get("trim_long_reads", True):
+        if st.session_state.trim_long_reads:
             displayed, remainder = smart_trim_text(raw_answer, max_sentences=3)
 
         meta = {"full": raw_answer, "remainder": remainder}
         st.session_state.chat.append(("bot", displayed, timestamp(), meta))
         st.session_state.last_response = raw_answer
-        st.session_state.main_input = ""
 
-        if st.session_state.get("voice_on", False):
-            speak(displayed, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
-
-        suggestions = []
-        low = msg.lower()
-        if "weather" in low:
-            suggestions = ["Tomorrow's forecast", "Weekly summary", "Humidity details"]
-        elif "joke" in low or "fun" in low:
-            suggestions = ["Another joke", "Short pun", "Clean joke"]
-        else:
-            suggestions = ["Explain simply", "Give an example", "Summarize in 2 lines"]
-
-        cols = st.columns(len(suggestions))
-        for i, s in enumerate(suggestions):
-            if cols[i].button(s):
-                st.session_state.chat.append(("user", s, timestamp(), {}))
-                with st.spinner("Thinking..."):
-                    ans = generate_gemini_answer(build_context_prompt(s), max_output_tokens=512)
-                st.session_state.chat.append(("bot", ans, timestamp(), {}))
-                if st.session_state.get("voice_on", False):
-                    speak(ans, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
-                save_memory(st.session_state.chat)
-                st.experimental_rerun()
+        if st.session_state.voice_on:
+            speak(displayed)
 
         save_memory(st.session_state.chat)
+        st.session_state.main_input = ""
         st.experimental_rerun()
 
 if st.session_state.chat:
@@ -348,10 +275,10 @@ if st.session_state.chat:
         if st.button("Continue reading"):
             remainder_text = last_meta["remainder"]
             st.session_state.chat.append(("bot", remainder_text, timestamp(), {"full": last_meta["full"], "remainder": None}))
-            if st.session_state.get("voice_on", False):
-                speak(remainder_text, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
+            if st.session_state.voice_on:
+                speak(remainder_text)
             save_memory(st.session_state.chat)
             st.experimental_rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
-st.markdown("<div style='text-align:center;color:#9aa4b2;font-size:12px;margin-top:10px'>Devloped by Kaif Ansari — Gemini-powered </div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center;color:#9aa4b2;font-size:12px;margin-top:10px'>Made with ❤️ by Kaif Ansari — Gemini-powered (optional)</div>", unsafe_allow_html=True)
