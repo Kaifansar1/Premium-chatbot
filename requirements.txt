@@ -1,4 +1,4 @@
 streamlit
-pyttsx3
 google-generativeai
-python-dotenv
+gTTS
+playsound==1.2.2
