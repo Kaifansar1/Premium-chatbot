@@ -5,18 +5,25 @@ import streamlit as st
 from datetime import datetime
 import re
 import textwrap
-
-# Removed pyttsx3 import since we replace it with gTTS
 from gtts import gTTS
 import tempfile
 
 # ---------------------------
+# Safe rerun helper for Streamlit versions compatibility
+# ---------------------------
+def safe_rerun():
+    try:
+        st.experimental_rerun()
+    except AttributeError:
+        # For newer Streamlit versions where experimental_rerun is removed
+        from streamlit.runtime.scriptrunner import request_rerun
+        request_rerun()
+
+# ---------------------------
 # GEMINI / TTS CONFIGURATION
 # ---------------------------
-# Put your key here OR use .streamlit/secrets.toml or environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", None) or st.secrets.get("GEMINI_API_KEY", None) or "YOUR_GEMINI_API_KEY"
 
-# Try to import Gemini SDK
 try:
     import google.generativeai as genai
     genai.configure(api_key=GEMINI_API_KEY)
@@ -107,10 +114,6 @@ def generate_gemini_answer(prompt, system_instruction=None, max_output_tokens=51
 # VOICE (TTS) FUNCTIONS - REPLACED pyttsx3 with gTTS for cloud compatibility
 # ---------------------------
 def speak(text, rate=160, volume=0.9, voice_id=None):
-    """
-    Use gTTS to generate mp3 audio and play in Streamlit audio player.
-    rate, volume, voice_id are ignored by gTTS.
-    """
     try:
         tts = gTTS(text=text, lang='en', slow=False)
         with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
@@ -164,7 +167,6 @@ with st.sidebar:
     st.session_state["voice_rate"] = rate
     volume = st.slider("Volume", 0.1, 1.0, st.session_state.get("voice_volume", 1.0))
     st.session_state["voice_volume"] = volume
-    # Voices dropdown for UI only; no effect with gTTS
     st.selectbox("System voice (optional)", ["Default"])
     st.markdown("---")
     st.subheader("Advanced")
@@ -277,11 +279,11 @@ if send and user_input is not None:
             if cmd_result:
                 st.session_state.chat.append(cmd_result)
                 save_memory(st.session_state.chat)
-                st.session_state["needs_rerun"] = True
+                safe_rerun()
             else:
                 st.session_state.chat.append(("bot", "Unknown command. Try /help.", timestamp(), {}))
                 save_memory(st.session_state.chat)
-                st.session_state["needs_rerun"] = True
+                safe_rerun()
 
         prompt = build_context_prompt(msg, memory_window=6)
 
@@ -318,10 +320,10 @@ if send and user_input is not None:
                 if st.session_state.get("voice_on", False):
                     speak(ans, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
                 save_memory(st.session_state.chat)
-                st.session_state["needs_rerun"] = True
+                safe_rerun()
 
         save_memory(st.session_state.chat)
-        st.session_state["needs_rerun"] = True
+        safe_rerun()
 
 if st.session_state.chat:
     last_role, last_text, last_time, last_meta = st.session_state.chat[-1]
@@ -332,13 +334,8 @@ if st.session_state.chat:
             if st.session_state.get("voice_on", False):
                 speak(remainder_text, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
             save_memory(st.session_state.chat)
-            st.session_state["needs_rerun"] = True
+            safe_rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div style='text-align:center;color:#9aa4b2;font-size:12px;margin-top:10px'>Made with ❤️ by Kaif Ansari — Gemini-powered (optional)</div>", unsafe_allow_html=True)
-
-# Trigger rerun safely at the very end
-if st.session_state.get("needs_rerun", False):
-    st.session_state["needs_rerun"] = False
-    st.experimental_rerun()
 
