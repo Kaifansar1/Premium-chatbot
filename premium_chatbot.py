@@ -3,12 +3,17 @@ import streamlit as st
 from datetime import datetime
 import pyttsx3
 import re
+# ❌ Old / wrong:
+# import google.genai as genai  # or google_genai
+
+# ✅ Correct:
+import google.generativeai as genai
 
 # Optional Gemini import; app will show a warning if missing
-try:
-    from google import genai
-except Exception:
-    genai = None
+#try:
+#    from google import genai
+#except Exception:
+#    genai = None
 
 # -------------------- Configuration --------------------
 st.set_page_config(page_title="✨ Premium Text+Voice ChatBot", page_icon="🤖", layout="wide")
