@@ -277,11 +277,11 @@ if send and user_input is not None:
             if cmd_result:
                 st.session_state.chat.append(cmd_result)
                 save_memory(st.session_state.chat)
-                st.experimental_rerun()
+                st.session_state["needs_rerun"] = True
             else:
                 st.session_state.chat.append(("bot", "Unknown command. Try /help.", timestamp(), {}))
                 save_memory(st.session_state.chat)
-                st.experimental_rerun()
+                st.session_state["needs_rerun"] = True
 
         prompt = build_context_prompt(msg, memory_window=6)
 
@@ -318,10 +318,10 @@ if send and user_input is not None:
                 if st.session_state.get("voice_on", False):
                     speak(ans, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
                 save_memory(st.session_state.chat)
-                st.experimental_rerun()
+                st.session_state["needs_rerun"] = True
 
         save_memory(st.session_state.chat)
-        st.experimental_rerun()
+        st.session_state["needs_rerun"] = True
 
 if st.session_state.chat:
     last_role, last_text, last_time, last_meta = st.session_state.chat[-1]
@@ -332,7 +332,13 @@ if st.session_state.chat:
             if st.session_state.get("voice_on", False):
                 speak(remainder_text, rate=st.session_state.get("voice_rate",150), volume=st.session_state.get("voice_volume",1.0), voice_id=st.session_state.get("voice_voice", None))
             save_memory(st.session_state.chat)
-            st.experimental_rerun()
+            st.session_state["needs_rerun"] = True
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div style='text-align:center;color:#9aa4b2;font-size:12px;margin-top:10px'>Made with ❤️ by Kaif Ansari — Gemini-powered (optional)</div>", unsafe_allow_html=True)
+
+# Trigger rerun safely at the very end
+if st.session_state.get("needs_rerun", False):
+    st.session_state["needs_rerun"] = False
+    st.experimental_rerun()
+
